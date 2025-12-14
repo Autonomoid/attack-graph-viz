@@ -229,30 +229,6 @@
           <label for="pathCount">Number of attack paths</label>
           <input id="pathCount" type="number" min="1" max="80" value="8" />
         </div>
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-          <div>
-            <label for="nodeCount">Node count</label>
-            <input id="nodeCount" type="number" min="6" max="40" value="15" />
-          </div>
-          <div>
-            <label for="extraLinks">Extra cross-links</label>
-            <input id="extraLinks" type="number" min="4" max="60" value="12" />
-          </div>
-        </div>
-        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">
-          <div>
-            <label for="minHops">Min hops per path</label>
-            <input id="minHops" type="number" min="2" max="18" value="4" />
-          </div>
-          <div>
-            <label for="maxHops">Max hops per path</label>
-            <input id="maxHops" type="number" min="3" max="24" value="9" />
-          </div>
-        </div>
-        <div>
-          <label for="revisitChance">Chance to revisit a seen node (0-1)</label>
-          <input id="revisitChance" type="number" min="0" max="1" step="0.05" value="0.25" />
-        </div>
         <div style="display: flex; gap: 8px;">
           <button class="primary" type="submit">Generate paths</button>
           <button class="secondary" type="button" id="resetGraph">Reset graph</button>
@@ -297,22 +273,14 @@
     let linkCounts = new Map();
     let generatedPaths = [];
     let simulation;
-    let currentGraphConfig = { nodeCount: 0, extraLinks: 0 };
-
-    function nodeId(node) {
-      return typeof node === 'object' ? node.id ?? node.index ?? node : node;
-    }
 
     function edgeKey(a, b) {
-      const aId = nodeId(a);
-      const bId = nodeId(b);
-      return aId < bId ? `${aId}-${bId}` : `${bId}-${aId}`;
+      return a < b ? `${a}-${b}` : `${b}-${a}`;
     }
 
     function makeBaseGraph(nodeCount = 15, extraLinks = 12) {
       nodes = Array.from({ length: nodeCount }, (_, i) => ({ id: i, label: `N${i + 1}` }));
       links = [];
-      currentGraphConfig = { nodeCount, extraLinks };
 
       // Backbone to keep the graph connected
       for (let i = 0; i < nodeCount - 1; i++) {
@@ -340,18 +308,18 @@
       updateStats();
     }
 
-    function randomPath({ minHops, maxHops, revisitChance }) {
+    function randomPath() {
       const start = Math.floor(Math.random() * nodes.length);
       let current = start;
       const visited = new Set([current]);
       const path = [current];
-      const desiredLength = Math.max(minHops, Math.min(maxHops, minHops + Math.floor(Math.random() * (maxHops - minHops + 1))));
+      const desiredLength = 4 + Math.floor(Math.random() * 6); // 4-9 hops
 
       for (let step = 0; step < desiredLength; step++) {
         const neighbors = links
           .filter((l) => l.source === current || l.target === current)
           .map((l) => (l.source === current ? l.target : l.source))
-          .filter((n) => !visited.has(n) || Math.random() < revisitChance);
+          .filter((n) => !visited.has(n) || Math.random() < 0.25);
 
         if (neighbors.length === 0) break;
         current = neighbors[Math.floor(Math.random() * neighbors.length)];
@@ -363,12 +331,11 @@
     }
 
     function generatePaths(count) {
-      const config = getConfig();
       generatedPaths = [];
       linkCounts = new Map(links.map((l) => [edgeKey(l.source, l.target), 0]));
 
       for (let i = 0; i < count; i++) {
-        const path = randomPath(config);
+        const path = randomPath();
         generatedPaths.push(path);
 
         for (let j = 0; j < path.length - 1; j++) {
@@ -380,27 +347,6 @@
       updateGraphAppearance();
       renderPathList();
       updateStats();
-    }
-
-    function getConfig() {
-      const nodeCount = clamp(Number(document.getElementById('nodeCount').value), 6, 40);
-      const extraLinks = clamp(Number(document.getElementById('extraLinks').value), 4, 60);
-      const minHops = clamp(Number(document.getElementById('minHops').value), 2, 18);
-      const maxHops = clamp(Number(document.getElementById('maxHops').value), minHops + 1, 24);
-      const revisitChance = clamp(Number(document.getElementById('revisitChance').value), 0, 1);
-
-      document.getElementById('nodeCount').value = nodeCount;
-      document.getElementById('extraLinks').value = extraLinks;
-      document.getElementById('minHops').value = minHops;
-      document.getElementById('maxHops').value = maxHops;
-      document.getElementById('revisitChance').value = revisitChance.toFixed(2);
-
-      return { nodeCount, extraLinks, minHops, maxHops, revisitChance };
-    }
-
-    function clamp(value, min, max) {
-      if (Number.isNaN(value)) return min;
-      return Math.max(min, Math.min(max, value));
     }
 
     function renderGraph() {
@@ -475,26 +421,19 @@
 
     function updateGraphAppearance() {
       const counts = Array.from(linkCounts.values());
-      const usedMax = Math.max(0, ...counts.filter((c) => c > 0));
-      const colorScale = d3.scaleSequential(d3.interpolateTurbo).domain([1, Math.max(usedMax, 1)]);
-      const widthScale = d3.scaleLinear().domain([1, Math.max(usedMax, 1)]).range([3, 14]);
+      const maxCount = counts.length ? Math.max(...counts) : 0;
+      const colorScale = d3.scaleSequential(d3.interpolateWarm).domain([0, Math.max(maxCount, 1)]);
+      const widthScale = d3.scaleLinear().domain([0, Math.max(maxCount, 1)]).range([2, 12]);
 
       linkLayer.selectAll('line').each(function (d) {
         const key = edgeKey(d.source.id ?? d.source, d.target.id ?? d.target);
         const count = linkCounts.get(key) ?? 0;
-        const selection = d3
-          .select(this)
+        d3.select(this)
           .transition()
-          .duration(300);
-
-        if (count > 0) {
-          selection
-            .attr('stroke', colorScale(count))
-            .attr('stroke-width', widthScale(count))
-            .attr('opacity', 0.35 + (count / Math.max(usedMax || 1, 1)) * 0.65);
-        } else {
-          selection.attr('stroke', '#1e293b').attr('stroke-width', 2).attr('opacity', 0.22);
-        }
+          .duration(300)
+          .attr('stroke', colorScale(count))
+          .attr('stroke-width', widthScale(count))
+          .attr('opacity', 0.3 + (count / Math.max(maxCount || 1, 1)) * 0.7);
       });
     }
 
@@ -518,28 +457,17 @@
     document.getElementById('controls').addEventListener('submit', (event) => {
       event.preventDefault();
       const count = Math.max(1, Math.min(80, Number(document.getElementById('pathCount').value)));
-      const { nodeCount, extraLinks } = getConfig();
-      const graphChanged =
-        nodeCount !== currentGraphConfig.nodeCount || extraLinks !== currentGraphConfig.extraLinks;
-
-      if (graphChanged) {
-        makeBaseGraph(nodeCount, extraLinks);
-        renderGraph();
-      }
-
       generatePaths(count);
     });
 
     document.getElementById('resetGraph').addEventListener('click', () => {
-      const { nodeCount, extraLinks } = getConfig();
-      makeBaseGraph(nodeCount, extraLinks);
+      makeBaseGraph();
       renderGraph();
       generatePaths(Number(document.getElementById('pathCount').value));
     });
 
     // Initial draw
-    const initialConfig = getConfig();
-    makeBaseGraph(initialConfig.nodeCount, initialConfig.extraLinks);
+    makeBaseGraph();
     renderGraph();
     generatePaths(Number(document.getElementById('pathCount').value));
   </script>
