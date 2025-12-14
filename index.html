@@ -297,6 +297,7 @@
     let linkCounts = new Map();
     let generatedPaths = [];
     let simulation;
+    let currentGraphConfig = { nodeCount: 0, extraLinks: 0 };
 
     function nodeId(node) {
       return typeof node === 'object' ? node.id ?? node.index ?? node : node;
@@ -311,6 +312,7 @@
     function makeBaseGraph(nodeCount = 15, extraLinks = 12) {
       nodes = Array.from({ length: nodeCount }, (_, i) => ({ id: i, label: `N${i + 1}` }));
       links = [];
+      currentGraphConfig = { nodeCount, extraLinks };
 
       // Backbone to keep the graph connected
       for (let i = 0; i < nodeCount - 1; i++) {
@@ -517,8 +519,14 @@
       event.preventDefault();
       const count = Math.max(1, Math.min(80, Number(document.getElementById('pathCount').value)));
       const { nodeCount, extraLinks } = getConfig();
-      makeBaseGraph(nodeCount, extraLinks);
-      renderGraph();
+      const graphChanged =
+        nodeCount !== currentGraphConfig.nodeCount || extraLinks !== currentGraphConfig.extraLinks;
+
+      if (graphChanged) {
+        makeBaseGraph(nodeCount, extraLinks);
+        renderGraph();
+      }
+
       generatePaths(count);
     });
 
